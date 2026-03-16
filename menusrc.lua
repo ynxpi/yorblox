@@ -1,3 +1,5 @@
+--UPDATE 1
+
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -21,7 +23,7 @@ function YorbloxLib.Init()
     self.Bg.BackgroundTransparency = 0.2
     self.Bg.BorderSizePixel = 0
     
-    -- Title & Dev
+    -- Title/Dev
     local t = Instance.new("TextLabel", self.Bg)
     t.Size = UDim2.new(1, 0, 0, 60); t.Position = UDim2.new(0, 0, 0.08, 0)
     t.Text = "YORBLOX"; t.TextColor3 = Color3.fromRGB(255, 0, 0)
@@ -41,34 +43,31 @@ function YorbloxLib.Init()
     self.Container.Size = UDim2.new(1, 0, 0.6, 0); self.Container.Position = UDim2.new(0, 0, 0.2, 0)
     self.Container.BackgroundTransparency = 1
 
-    -- State
-    self.MenuData = {} -- Structure: {CategoryName = {Items}}
+    -- Hidden TextBox for Slider Input
+    self.InputReceiver = Instance.new("TextBox", self.Screen)
+    self.InputReceiver.Size = UDim2.new(0,0,0,0)
+    self.InputReceiver.Visible = false
+
+    self.MenuData = {} 
     self.Categories = {}
     self.CurrentPath = "Main"
     self.Index = 1
     self.Open = false
+    self.TypingSlider = false
     
     self:BindControls()
     return self
 end
 
-function YorbloxLib:CreateCategory(name)
-    table.insert(self.Categories, name)
-    self.MenuData[name] = {}
-end
-
-function YorbloxLib:AddButton(cat, name, callback)
-    table.insert(self.MenuData[cat], {Type = "Button", Name = name, Callback = callback})
-end
-
-function YorbloxLib:AddToggle(cat, name, callback)
-    local item = {Type = "Toggle", Name = name, State = false, Callback = callback}
-    table.insert(self.MenuData[cat], item)
-end
-
-function YorbloxLib:AddSlider(cat, name, min, max, callback)
-    local item = {Type = "Slider", Name = name, Min = min, Max = max, Value = min, Callback = callback}
-    table.insert(self.MenuData[cat], item)
+-- Helper to freeze movement
+local function toggleFreeze(enabled)
+    if enabled then
+        ContextActionService:BindActionAtPriority("YnxFreeze", function() return Enum.ContextActionResult.Sink end, false, 3000, 
+            Enum.KeyCode.Up, Enum.KeyCode.Down, Enum.KeyCode.Left, Enum.KeyCode.Right,
+            Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D)
+    else
+        ContextActionService:UnbindAction("YnxFreeze")
+    end
 end
 
 function YorbloxLib:Refresh()
@@ -78,8 +77,12 @@ function YorbloxLib:Refresh()
     for i, item in ipairs(list) do
         local txt = type(item) == "string" and item or item.Name
         if type(item) == "table" then
-            if item.Type == "Toggle" then txt = txt .. (item.State and " [ON]" or " [OFF]")
-            elseif item.Type == "Slider" then txt = txt .. " <" .. item.Value .. ">" end
+            if item.Type == "Toggle" then 
+                txt = txt .. (item.State and " [ON]" or " [OFF]")
+            elseif item.Type == "Slider" then 
+                local displayVal = self.TypingSlider and (self.Index == i) and "" or tostring(item.Value)
+                txt = txt .. " <" .. displayVal .. ">"
+            end
         end
         
         local lbl = Instance.new("TextLabel", self.Container)
@@ -96,9 +99,11 @@ function YorbloxLib:BindControls()
         if io.KeyCode == Enum.KeyCode.Delete then
             self.Open = not self.Open
             self.Screen.Enabled = self.Open
+            toggleFreeze(self.Open)
             if self.Open then self:Refresh() end
         end
-        if not self.Open then return end
+        
+        if not self.Open or self.TypingSlider then return end
         
         local list = self.CurrentPath == "Main" and self.Categories or self.MenuData[self.CurrentPath]
         
@@ -114,19 +119,48 @@ function YorbloxLib:BindControls()
             self.Index = 1
         elseif io.KeyCode == Enum.KeyCode.Enter and self.CurrentPath ~= "Main" then
             local item = list[self.Index]
-            if item.Type == "Button" then item.Callback()
-            elseif item.Type == "Toggle" then item.State = not item.State; item.Callback(item.State)
-            end
-        elseif self.CurrentPath ~= "Main" and list[self.Index].Type == "Slider" then
-            local item = list[self.Index]
-            if io.KeyCode == Enum.KeyCode.D or io.KeyCode == Enum.KeyCode.Right then
-                item.Value = math.min(item.Max, item.Value + 1); item.Callback(item.Value)
-            elseif io.KeyCode == Enum.KeyCode.A or io.KeyCode == Enum.KeyCode.Left then
-                item.Value = math.max(item.Min, item.Value - 1); item.Callback(item.Value)
+            if item.Type == "Button" then 
+                item.Callback()
+            elseif item.Type == "Toggle" then 
+                item.State = not item.State
+                item.Callback(item.State)
+            elseif item.Type == "Slider" then
+                self.TypingSlider = true
+                self:Refresh()
+                self.InputReceiver:CaptureFocus()
+                
+                local connection
+                connection = self.InputReceiver.FocusLost:Connect(function(enterPressed)
+                    if enterPressed then
+                        local num = tonumber(self.InputReceiver.Text)
+                        if num then
+                            item.Value = math.clamp(num, item.Min, item.Max)
+                            item.Callback(item.Value)
+                        end
+                    end
+                    self.TypingSlider = false
+                    self.InputReceiver.Text = ""
+                    self:Refresh()
+                    connection:Disconnect()
+                end)
             end
         end
         self:Refresh()
     end)
+end
+
+-- Template methods
+function YorbloxLib:CreateCategory(name)
+    table.insert(self.Categories, name); self.MenuData[name] = {}
+end
+function YorbloxLib:AddButton(cat, name, cb)
+    table.insert(self.MenuData[cat], {Type = "Button", Name = name, Callback = cb})
+end
+function YorbloxLib:AddToggle(cat, name, cb)
+    table.insert(self.MenuData[cat], {Type = "Toggle", Name = name, State = false, Callback = cb})
+end
+function YorbloxLib:AddSlider(cat, name, min, max, cb)
+    table.insert(self.MenuData[cat], {Type = "Slider", Name = name, Min = min, Max = max, Value = min, Callback = cb})
 end
 
 return YorbloxLib
