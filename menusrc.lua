@@ -7,7 +7,6 @@ local Players = game:GetService("Players")
 local YorbloxLib = {}
 YorbloxLib.__index = YorbloxLib
 
--- Pass the modifier (like RightMouseButton) and the key (like V) here
 function YorbloxLib.Init(modifier, openKey)
     local self = setmetatable({}, YorbloxLib)
     
@@ -20,12 +19,12 @@ function YorbloxLib.Init(modifier, openKey)
     self.Screen.IgnoreGuiInset = true
     self.Screen.Enabled = false
     
-    -- Background with Glitch Effect
+    -- Background (Solid Black as requested)
     self.Bg = Instance.new("Frame", self.Screen)
     self.Bg.Size = UDim2.new(0, 280, 1, 0)
     self.Bg.Position = UDim2.new(0.7, 0, 0, 0)
-    self.Bg.BackgroundColor3 = Color3.fromRGB(5, 5, 5)
-    self.Bg.BackgroundTransparency = 0.2
+    self.Bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0) -- Pure Black
+    self.Bg.BackgroundTransparency = 0.1 -- Slight transparency for that mod menu look
     self.Bg.BorderSizePixel = 0
     
     -- Glitch Overlay
@@ -64,6 +63,18 @@ function YorbloxLib.Init(modifier, openKey)
     return self
 end
 
+-- Fixed Action Sinking
+local function toggleLock(enabled)
+    if enabled then
+        ContextActionService:BindActionAtPriority("YnxLock", function() 
+            return Enum.ContextActionResult.Sink 
+        end, false, 3000, 
+        Enum.KeyCode.W, Enum.KeyCode.S, Enum.KeyCode.A, Enum.KeyCode.D, Enum.KeyCode.Space)
+    else
+        ContextActionService:UnbindAction("YnxLock")
+    end
+end
+
 function YorbloxLib:Refresh()
     for _, v in ipairs(self.Container:GetChildren()) do v:Destroy() end
     local list = self.CurrentPath == "Main" and self.Categories or self.MenuData[self.CurrentPath]
@@ -89,19 +100,13 @@ end
 
 function YorbloxLib:BindControls()
     UserInputService.InputBegan:Connect(function(io, p)
-        -- Uses the keys set in .Init()
         local modifierDown = UserInputService:IsMouseButtonPressed(self.Modifier) or UserInputService:IsKeyDown(self.Modifier)
         
         if io.KeyCode == self.OpenKey and modifierDown then
             self.Open = not self.Open
             self.Screen.Enabled = self.Open
-            if self.Open then
-                ContextActionService:BindActionAtPriority("YnxLock", function() return Enum.ContextActionResult.Sink end, false, 3000, 
-                Enum.KeyCode.W, Enum.KeyCode.S, Enum.KeyCode.A, Enum.KeyCode.D, Enum.KeyCode.Space)
-                self:Refresh()
-            else
-                ContextActionService:UnbindAction("YnxLock")
-            end
+            toggleLock(self.Open)
+            if self.Open then self:Refresh() end
         end
 
         if not self.Open then return end
@@ -110,7 +115,13 @@ function YorbloxLib:BindControls()
         if io.KeyCode == Enum.KeyCode.W then
             self.Index = self.Index > 1 and self.Index - 1 or #list
         elseif io.KeyCode == Enum.KeyCode.S then
-            self.Index = self.Index < #list and self.Index + 1 or 1
+            -- Logic: If at the bottom and in a category, go back. Otherwise, move down.
+            if self.Index == #list and self.CurrentPath ~= "Main" then
+                self.CurrentPath = "Main"
+                self.Index = 1
+            else
+                self.Index = self.Index < #list and self.Index + 1 or 1
+            end
         elseif io.KeyCode == Enum.KeyCode.Space then
             if self.CurrentPath == "Main" then
                 self.CurrentPath = self.Categories[self.Index]
@@ -120,8 +131,6 @@ function YorbloxLib:BindControls()
                 if item.Type == "Button" then item.Callback()
                 elseif item.Type == "Toggle" then item.State = not item.State; item.Callback(item.State) end
             end
-        elseif io.KeyCode == Enum.KeyCode.Left and self.CurrentPath ~= "Main" then
-            self.CurrentPath = "Main"; self.Index = 1
         end
         self:Refresh()
     end)
@@ -133,11 +142,11 @@ function YorbloxLib:BindControls()
                 if UserInputService:IsKeyDown(Enum.KeyCode.D) then
                     item.Value = math.min(item.Max, item.Value + 1)
                     item.Callback(item.Value); self:Refresh()
-                    task.wait(0.05)
+                    task.wait(0.08) -- Throttled for control
                 elseif UserInputService:IsKeyDown(Enum.KeyCode.A) then
                     item.Value = math.max(item.Min, item.Value - 1)
                     item.Callback(item.Value); self:Refresh()
-                    task.wait(0.05)
+                    task.wait(0.08)
                 end
             end
         end
