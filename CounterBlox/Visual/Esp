@@ -1,0 +1,114 @@
+-- Global Control
+_G.EspEnabled = _G.EspEnabled or false -- Default to off if not set
+
+-- Settings
+local Settings = {
+    Box_Color = Color3.fromRGB(255, 0, 0),
+    Box_Thickness = 2,
+    Team_Check = true,
+    Highlight_Enemies_Only = true, 
+    Autothickness = true
+}
+
+local Space = game:GetService("Workspace")
+local Player = game:GetService("Players").LocalPlayer
+local Camera = Space.CurrentCamera
+
+local function NewLine(color, thickness)
+    local line = Drawing.new("Line")
+    line.Visible = false
+    line.Color = color
+    line.Thickness = thickness
+    line.Transparency = 1
+    return line
+end
+
+local function Vis(lib, state)
+    for i, v in pairs(lib) do
+        v.Visible = state
+    end
+end
+
+local function Main(plr)
+    repeat task.wait() until plr.Character ~= nil and plr.Character:FindFirstChild("Humanoid") ~= nil
+    
+    local Library = {
+        TL1 = NewLine(Settings.Box_Color, Settings.Box_Thickness),
+        TL2 = NewLine(Settings.Box_Color, Settings.Box_Thickness),
+        TR1 = NewLine(Settings.Box_Color, Settings.Box_Thickness),
+        TR2 = NewLine(Settings.Box_Color, Settings.Box_Thickness),
+        BL1 = NewLine(Settings.Box_Color, Settings.Box_Thickness),
+        BL2 = NewLine(Settings.Box_Color, Settings.Box_Thickness),
+        BR1 = NewLine(Settings.Box_Color, Settings.Box_Thickness),
+        BR2 = NewLine(Settings.Box_Color, Settings.Box_Thickness)
+    }
+    
+    local oripart = Instance.new("Part")
+    oripart.Transparency = 1
+    oripart.CanCollide = false
+    oripart.Parent = Space
+
+    local function Updater()
+        local connection
+        connection = game:GetService("RunService").RenderStepped:Connect(function()
+            -- THE GLOBAL CHECK
+            if not _G.EspEnabled then
+                Vis(Library, false)
+                return
+            end
+
+            local char = plr.Character
+            if Settings.Highlight_Enemies_Only and plr.Team == Player.Team then
+                Vis(Library, false)
+                return
+            end
+
+            if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+                local HumPos, vis = Camera:WorldToViewportPoint(char.HumanoidRootPart.Position)
+                
+                if vis then
+                    oripart.Size = Vector3.new(char.HumanoidRootPart.Size.X, char.HumanoidRootPart.Size.Y * 1.5, char.HumanoidRootPart.Size.Z)
+                    oripart.CFrame = CFrame.new(char.HumanoidRootPart.CFrame.Position, Camera.CFrame.Position)
+                    
+                    local SizeX, SizeY = oripart.Size.X, oripart.Size.Y
+                    local TL = Camera:WorldToViewportPoint((oripart.CFrame * CFrame.new(SizeX, SizeY, 0)).p)
+                    local TR = Camera:WorldToViewportPoint((oripart.CFrame * CFrame.new(-SizeX, SizeY, 0)).p)
+                    local BL = Camera:WorldToViewportPoint((oripart.CFrame * CFrame.new(SizeX, -SizeY, 0)).p)
+                    local BR = Camera:WorldToViewportPoint((oripart.CFrame * CFrame.new(-SizeX, -SizeY, 0)).p)
+
+                    local ratio = (Camera.CFrame.p - char.HumanoidRootPart.Position).magnitude
+                    local offset = math.clamp(1/ratio*750, 2, 300)
+
+                    Library.TL1.From = Vector2.new(TL.X, TL.Y); Library.TL1.To = Vector2.new(TL.X + offset, TL.Y)
+                    Library.TL2.From = Vector2.new(TL.X, TL.Y); Library.TL2.To = Vector2.new(TL.X, TL.Y + offset)
+                    Library.TR1.From = Vector2.new(TR.X, TR.Y); Library.TR1.To = Vector2.new(TR.X - offset, TR.Y)
+                    Library.TR2.From = Vector2.new(TR.X, TR.Y); Library.TR2.To = Vector2.new(TR.X, TR.Y + offset)
+                    Library.BL1.From = Vector2.new(BL.X, BL.Y); Library.BL1.To = Vector2.new(BL.X + offset, BL.Y)
+                    Library.BL2.From = Vector2.new(BL.X, BL.Y); Library.BL2.To = Vector2.new(BL.X, BL.Y - offset)
+                    Library.BR1.From = Vector2.new(BR.X, BR.Y); Library.BR1.To = Vector2.new(BR.X - offset, BR.Y)
+                    Library.BR2.From = Vector2.new(BR.X, BR.Y); Library.BR2.To = Vector2.new(BR.X, BR.Y - offset)
+
+                    Vis(Library, true)
+                else
+                    Vis(Library, false)
+                end
+            else
+                Vis(Library, false)
+                if not game:GetService("Players"):FindFirstChild(plr.Name) then
+                    for _, v in pairs(Library) do v:Remove() end
+                    oripart:Destroy()
+                    connection:Disconnect()
+                end
+            end
+        end)
+    end
+    coroutine.wrap(Updater)()
+end
+
+for _, v in pairs(game:GetService("Players"):GetPlayers()) do
+    if v ~= Player then coroutine.wrap(Main)(v) end
+end
+
+game:GetService("Players").PlayerAdded:Connect(function(newplr)
+    coroutine.wrap(Main)(newplr)
+end)
